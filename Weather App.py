@@ -1,5 +1,10 @@
-from tkinter import *
-import tkinter as tk
+import sys
+import os
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel,
+                             QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
+                             QMessageBox)
+from PyQt5.QtGui import QPixmap, QIcon
+from PyQt5.QtCore import Qt
 import requests
 from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
@@ -7,127 +12,220 @@ from datetime import datetime
 import pytz
 
 
-def getweather():
-    CITY = textfield.get()
-    CITY.capitalize()
+class WeatherApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.API_KEY = "ecbfb347643dcca7705690ad75b98b40"
+        self.BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+        self.ICON_MAP = {
+            "01d": "sun.png",
+            "01n": "moon.png",
+            "02d": "partly-cloudy.png",
+            "02n": "partly-cloudy-night.png",
+            "03d": "cloud.png",
+            "03n": "cloud.png",
+            "04d": "cloud.png",
+            "04n": "cloud.png",
+            "09d": "rain.png",
+            "09n": "rain.png",
+            "10d": "rain.png",
+            "10n": "rain.png",
+            "11d": "storm.png",
+            "11n": "storm.png",
+            "13d": "snow.png",
+            "13n": "snow.png",
+            "50d": "mist.png",
+            "50n": "mist.png"
+        }
+        self.ASSETS_DIR = "assets"
+        self.setup_ui()
 
-    geolocator = Nominatim(user_agent="geoapiExercises")
-    location = geolocator.geocode(CITY)
-    obj = TimezoneFinder()
-    result = obj.timezone_at(lng=location.longitude, lat=location.latitude)
+    def setup_ui(self):
+        self.setWindowTitle("Weather App")
+        self.setFixedSize(900, 600)
+        self.setStyleSheet("""
+            background-color: #2c3e50;
+            font-family: 'Arial';
+        """)
 
-    home = pytz.timezone(result)
-    local_time = datetime.now(home)
-    current_time = local_time.strftime("%I:%M %p")
-    clock.config(text=current_time)
-    name.config(text="CURRENT WEATHER")
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        layout = QVBoxLayout(main_widget)
 
-    # weather API
+        #search Area
+        search_container = QHBoxLayout()
+        self.city_input = QLineEdit()
+        self.city_input.setPlaceholderText("Enter City Name")
+        self.city_input.setStyleSheet("""
+            QLineEdit {
+                background: #404040;
+                border: 2px solid #34495e;
+                border-radius: 15px;
+                color: white;
+                font-size: 18px;
+                padding: 12px 20px;
+                min-width: 300px;
+            }
+        """)
 
-    BASE_URL = "http://api.openweathermap.org/data/2.5/weather?"
-    API_KEY = "ecbfb347643dcca7705690ad75b98b40"
+        search_btn = QPushButton()
+        search_btn.setIcon(QIcon(self.asset_path("search_icon.png")))
+        search_btn.setStyleSheet("""
+            QPushButton {
+                background: #3498db;
+                border: none;
+                border-radius: 15px;
+                padding: 12px;
+                margin-left: 10px;
+                min-width: 40px;
+                min-height: 40px;
+            }
+            QPushButton:hover {
+                background: #2980b9;
+            }
+        """)
+        search_btn.clicked.connect(self.fetch_weather)
 
-    url = BASE_URL + "appid=" + API_KEY + "&q=" + CITY
+        search_container.addWidget(self.city_input)
+        search_container.addWidget(search_btn)
+        layout.addLayout(search_container)
 
-    response = requests.get(url).json()
+        #weather Icon
+        self.weather_icon = QLabel()
+        self.weather_icon.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.weather_icon)
 
-    temp_kelvin = response['main']['temp']
-    feels_like_kelvin = response['main']['feels_like']
-    humidity = response['main']['humidity']
-    description = response['weather'][0]['description']
-    wind_speed = response['wind']['speed']
-    pressure = response['main']['pressure']
-    description.capitalize()
+        #temperature Display
+        self.temp_label = QLabel()
+        self.temp_label.setStyleSheet("""
+            color: #e74c3c;
+            font-size: 72px;
+            font-weight: bold;
+            margin: 20px 0;
+        """)
+        layout.addWidget(self.temp_label, alignment=Qt.AlignCenter)
 
-    celsius = f"{temp_kelvin - 273.15:.1f}"
-    feelsLike = f"{feels_like_kelvin - 273.15:.1f}"
+        #location and time
+        self.location_label = QLabel()
+        self.location_label.setStyleSheet("color: #ecf0f1; font-size: 20px;")
+        self.time_label = QLabel()
+        self.time_label.setStyleSheet("color: #bdc3c7; font-size: 16px;")
+        layout.addWidget(self.location_label, alignment=Qt.AlignCenter)
+        layout.addWidget(self.time_label, alignment=Qt.AlignCenter)
 
-    c.config(text=f"{celsius}°C", font=("Arial", 45, 'bold'))
-    t.config(text=f"Feels Like {feelsLike}°C", font=("arial", 15, 'bold'))
-    h.config(text=f"{humidity}%")
-    d.config(text=description)
-    p.config(text=pressure)
-    w.config(text=f"{wind_speed}m/s")
+        #weather details
+        details_layout = QHBoxLayout()
+        self.create_detail_card(details_layout, "WIND", "wind.png")
+        self.create_detail_card(details_layout, "HUMIDITY", "humidity.png")
+        self.create_detail_card(details_layout, "PRESSURE", "pressure.png")
+        self.create_detail_card(details_layout, "FEELS LIKE", "thermometer.png")
+        layout.addLayout(details_layout)
 
-    """if 'rain' in description:
-        logo_image = PhotoImage(file="rain.png")
-    elif 'clear' in description:
-        logo_image = PhotoImage(file="sun.png")
-    elif 'storm' in description:
-        logo_image = PhotoImage(file="storm.png")
-    elif 'wind' in description:
-        logo_image = PhotoImage(file="wind.png")
-    elif 'cloud' in description:
-        logo_image = PhotoImage(file="cloudy.png")
-    elif 'mist' in description:
-        logo_image = PhotoImage(file="mist.png")
-    else:
-        logo_image = PhotoImage(file="logo.png")
+    def asset_path(self, filename):
+        return os.path.join(self.ASSETS_DIR, filename)
 
-    logo.config(image=logo_image)
-    logo.image = logo_image"""
+    def create_detail_card(self, layout, title, icon):
+        card = QVBoxLayout()
+        card.setSpacing(10)
+
+        #icon
+        icon_label = QLabel()
+        pixmap = QPixmap(self.asset_path(icon))
+        if pixmap.isNull():
+            print(f"Missing icon: {icon}")
+        icon_label.setPixmap(pixmap.scaled(32, 32, Qt.KeepAspectRatio))
+        icon_label.setAlignment(Qt.AlignCenter)
+
+        #title
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #bdc3c7; font-size: 14px;")
+        title_label.setAlignment(Qt.AlignCenter)
+
+        #value
+        value_label = QLabel("...")
+        value_label.setObjectName(title.lower().replace(" ", "_"))
+        value_label.setStyleSheet("""
+            QLabel {
+                color: #ecf0f1;
+                font-size: 18px;
+                font-weight: bold;
+            }
+        """)
+        value_label.setAlignment(Qt.AlignCenter)
+
+        card.addWidget(icon_label)
+        card.addWidget(title_label)
+        card.addWidget(value_label)
+        layout.addLayout(card)
+
+    def fetch_weather(self):
+        try:
+            city = self.city_input.text().strip()
+            if not city:
+                self.show_error("Please enter a city name")
+                return
+
+            geolocator = Nominatim(user_agent="WeatherApp/1.0")
+            location = geolocator.geocode(city, exactly_one=True, timeout=10)
+            if not location:
+                self.show_error("City not found")
+                return
+
+            params = {
+                "lat": location.latitude,
+                "lon": location.longitude,
+                "appid": self.API_KEY,
+                "units": "metric"
+            }
+
+            response = requests.get(self.BASE_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            self.update_display(data, location)
+
+        except requests.exceptions.RequestException as e:
+            self.show_error(f"API Error: {str(e)}")
+        except Exception as e:
+            self.show_error(f"Unexpected error: {str(e)}")
+
+    def update_display(self, data, location):
+        #weather icon
+        icon_code = data["weather"][0]["icon"]
+        self.set_weather_icon(icon_code)
+
+        #temperature
+        temp = data["main"]["temp"]
+        self.temp_label.setText(f"{temp:.1f}°C")
+
+        #location and time
+        self.location_label.setText(location.address.split(',')[0])
+        timezone_str = TimezoneFinder().timezone_at(lng=location.longitude, lat=location.latitude)
+        current_time = datetime.now(pytz.timezone(timezone_str)).strftime("%I:%M %p, %A")
+        self.time_label.setText(current_time)
+
+        #weather details
+        self.findChild(QLabel, "wind").setText(f"{data['wind']['speed']} m/s")
+        self.findChild(QLabel, "humidity").setText(f"{data['main']['humidity']}%")
+        self.findChild(QLabel, "pressure").setText(f"{data['main']['pressure']} hPa")
+        self.findChild(QLabel, "feels_like").setText(f"{data['main']['feels_like']:.1f}°C")
+
+    def set_weather_icon(self, icon_code):
+        icon_file = self.ICON_MAP.get(icon_code, "logo.png")
+        pixmap = QPixmap(self.asset_path(icon_file))
+
+        if pixmap.isNull():
+            print(f"Missing weather icon: {icon_file}")
+            pixmap = QPixmap(self.asset_path("logo.png"))
+
+        self.weather_icon.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio))
+
+    def show_error(self, message):
+        QMessageBox.critical(self, "Error", message)
 
 
-root = Tk()
-root.title("Weather")
-root.geometry("900x500+300+200")
-root.resizable(False, False)
-
-search_image = PhotoImage(file="search.png")
-myimage = Label(image=search_image)
-myimage.place(x=20, y=20)
-
-textfield = tk.Entry(highlightthickness=4, highlightcolor="black", highlightbackground="black", justify="center",
-                     width=17, font=("poppins", 25, "bold"), bg="#404040", border=0, fg="white", textvariable="City")
-textfield.place(x=85, y=38)
-textfield.focus()
-
-# Search icon
-search_image = PhotoImage(file="search_icon.png")
-myimage_icon = Button(image=search_image, borderwidth=0, cursor="hand2", bg="#404040", command=getweather)
-myimage_icon.place(x=400, y=34)
-
-# Logo
-logo_image = PhotoImage(file="logo.png")
-logo = Label(image=logo_image)
-logo.place(x=150, y=100)
-
-# Bottom box
-frame_image = PhotoImage(file="box.png")
-frame_myimage = Label(master=root, image=frame_image)
-frame_myimage.pack(padx=5, pady=5, side=BOTTOM)
-
-# time
-name = Label(root, font=("arial", 15, "bold"))
-name.place(x=30, y=100)
-clock = Label(master=root, font=("Helvetica", 20))
-clock.place(x=30, y=130)
-
-# Label
-label1 = Label(root, text="WIND", font=("Helvetica", 15, 'bold'), fg='white', bg="#1ab5ef")
-label1.place(x=120, y=400)
-
-label2 = Label(root, text="HUMIDITY", font=("Helvetica", 15, 'bold'), fg='white', bg="#1ab5ef")
-label2.place(x=250, y=400)
-
-label3 = Label(root, text="DESCRIPTION", font=("Helvetica", 15, 'bold'), fg='white', bg="#1ab5ef")
-label3.place(x=430, y=400)
-
-label4 = Label(root, text="PRESSURE", font=("Helvetica", 15, 'bold'), fg='white', bg="#1ab5ef")
-label4.place(x=650, y=400)
-
-t = Label(font=("arial", 70, "bold"), fg="#ee666d")
-t.place(x=400, y=150)
-c = Label(font=("arial", 15, "bold"))
-c.place(x=400, y=250)
-
-w = Label(text="...", font=("arial", 20, 'bold'), bg="#1ab5ef")
-w.place(x=110, y=430)
-h = Label(text="...", font=("arial", 20, 'bold'), bg="#1ab5ef")
-h.place(x=270, y=430)
-d = Label(text="...", font=("arial", 20, 'bold'), bg="#1ab5ef")
-d.place(x=445, y=430)
-p = Label(text="...", font=("arial", 20, 'bold'), bg="#1ab5ef")
-p.place(x=685, y=430)
-
-root.mainloop()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = WeatherApp()
+    window.show()
+    sys.exit(app.exec_())
